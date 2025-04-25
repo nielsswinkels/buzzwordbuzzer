@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buzzword Buzzer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        .pulse {
+            animation: pulse 0.5s ease-in-out;
+        }
+        .vibrate {
+            animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+        }
+        @keyframes shake {
+            10%, 90% { transform: translateX(-1px); }
+            20%, 80% { transform: translateX(2px); }
+            30%, 50%, 70% { transform: translateX(-4px); }
+            40%, 60% { transform: translateX(4px); }
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-indigo-900 to-purple-800 min-h-screen text-white">
+    <div class="container mx-auto px-4 py-12">
+        <div class="max-w-md mx-auto bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl overflow-hidden p-8">
+            <div class="text-center mb-8">
+                <h1 class="text-3xl font-bold mb-2 flex items-center justify-center">
+                    <i class="fas fa-bolt mr-3 text-yellow-300"></i> Buzzword Buzzer
+                </h1>
+                <p class="text-gray-300">Speak aloud. When a buzzword is detected, your device will vibrate.</p>
+            </div>
+
+            <div class="mb-8">
+                <label class="block mb-2 text-sm font-medium text-gray-300">Current Status:</label>
+                <div id="status" class="bg-white/20 rounded-lg p-4 flex items-center">
+                    <div id="statusIcon" class="w-4 h-4 rounded-full bg-gray-500 mr-3"></div>
+                    <span id="statusText" class="font-medium">Waiting to start</span>
+                </div>
+            </div>
+
+            <div class="mb-8">
+                <label class="block mb-2 text-sm font-medium text-gray-300">Buzzwords to detect (comma separated):</label>
+                <div class="flex">
+                    <input id="buzzwordsInput" type="text" 
+                           value="future,blockchain,metaverse,IoT,cloud computing,5G,edge computing,deep learning,neural networks,smart cities,green tech,quantum computing,decentralization,cybersecurity,biometrics,automation,genAI,regenerative,agile,disruption,scalability,interoperability,carbon neutral,tokenization,data-driven,immersive,wearables,digital twin,hyperautomation,sustainable,AI,virtual reality,VR,AR,XR,extended reality,transformation,digitization" 
+                           class="flex-1 bg-white/10 border border-gray-600 text-white text-sm rounded-l-lg p-2.5 focus:ring-2 focus:ring-purple-500 focus:outline-none">
+                    <button id="updateBuzzwords" class="bg-purple-600 hover:bg-purple-700 px-4 rounded-r-lg">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+                <p class="text-xs text-gray-400 mt-1">These words will trigger vibration when spoken</p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 mb-8">
+                <button id="startBtn" class="bg-green-600 hover:bg-green-700 py-3 px-4 rounded-lg font-medium flex items-center justify-center">
+                    <i class="fas fa-microphone mr-2"></i> Start Listening
+                </button>
+                <button id="stopBtn" class="bg-red-600 hover:bg-red-700 py-3 px-4 rounded-lg font-medium flex items-center justify-center">
+                    <i class="fas fa-stop mr-2"></i> Stop
+                </button>
+            </div>
+
+            <div class="mb-8">
+                <div class="flex justify-between items-center mb-2">
+                    <label class="text-sm font-medium text-gray-300">Transcription:</label>
+                    <button id="clearBtn" class="text-xs text-gray-300 hover:text-white">
+                        <i class="fas fa-trash-alt mr-1"></i> Clear
+                    </button>
+                </div>
+                <div id="transcript" class="bg-white/20 rounded-lg p-4 h-40 overflow-y-auto text-sm">
+                    <p class="text-gray-400 italic">Speech will appear here...</p>
+                </div>
+            </div>
+
+            <div class="bg-white/10 rounded-lg p-4">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-sm font-medium text-gray-300">Recent Matches:</span>
+                    <span id="matchCount" class="text-xs bg-purple-600 px-2 py-1 rounded-full">0</span>
+                </div>
+                <div id="matchesList" class="text-sm grid grid-cols-2 gap-2">
+                    <!-- Matches will appear here -->
+                </div>
+            </div>
+
+            <div class="mt-8 text-center text-xs text-gray-400">
+                <p>Make sure microphone permissions are granted</p>
+                <p class="mt-1">Works best on mobile devices with vibration support</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // DOM elements
+            const startBtn = document.getElementById('startBtn');
+            const stopBtn = document.getElementById('stopBtn');
+            const clearBtn = document.getElementById('clearBtn');
+            const updateBuzzwordsBtn = document.getElementById('updateBuzzwords');
+            const buzzwordsInput = document.getElementById('buzzwordsInput');
+            const transcript = document.getElementById('transcript');
+            const statusIcon = document.getElementById('statusIcon');
+            const statusText = document.getElementById('statusText');
+            const matchesList = document.getElementById('matchesList');
+            const matchCount = document.getElementById('matchCount');
+            
+            // State variables
+            let recognition;
+            let isListening = false;
+            let matches = 0;
+            let buzzwords = ["urgent", "important", "critical", "emergency", "deadline"];
+            
+            // Initialize
+            updateUI();
+
+            buzzwords = buzzwordsInput.value.split(',').map(w => w.trim().toLowerCase()).filter(w => w.length > 0);
+
+            
+            // Check for speech recognition support
+            function checkSpeechRecognitionSupport() {
+                if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                    statusText.textContent = "Speech recognition not supported";
+                    statusIcon.className = "w-4 h-4 rounded-full bg-red-500 mr-3";
+                    startBtn.disabled = true;
+                    showToast("Your browser doesn't support speech recognition. Try Chrome or Edge.");
+                    return false;
+                }
+                return true;
+            }
+            
+            // Setup speech recognition
+            function setupRecognition() {
+                // First check support
+                if (!checkSpeechRecognitionSupport()) return;
+
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                recognition = new SpeechRecognition();
+                
+                recognition.continuous = true;
+                recognition.interimResults = false;
+                recognition.lang = 'en-US';
+                
+                recognition.onstart = function() {
+                    console.log('Recognition started');
+                    isListening = true;
+                    updateUI();
+                    statusText.textContent = "Listening...";
+                    statusIcon.className = "w-4 h-4 rounded-full bg-green-500 mr-3 animate-pulse";
+                };
+                
+                recognition.onresult = function(event) {
+                    console.log('Recognition result received');
+                    const result = event.results[event.results.length - 1];
+                    const text = result[0].transcript.toLowerCase();
+                    console.log('Recognized text:', text);
+                    
+                    // Add to transcript
+                    addToTranscript(text);
+                    
+                    // Check for buzzwords
+                    checkForBuzzwords(text);
+                };
+                
+                recognition.onerror = function(event) {
+                    console.error("Recognition error:", event.error);
+                    statusText.textContent = "Error: " + event.error;
+                    statusIcon.className = "w-4 h-4 rounded-full bg-red-500 mr-3";
+                    isListening = false;
+                    updateUI();
+                    
+                    // Handle common errors
+                    if (event.error === 'not-allowed') {
+                        showToast("Microphone access denied. Please allow microphone permissions.");
+                    } else if (event.error === 'no-speech') {
+                        showToast("No speech detected. Try speaking louder.");
+                    }
+                };
+                
+                recognition.onend = function() {
+                    console.log('Recognition ended');
+                    if (isListening) {
+                        // If we're still supposed to be listening, restart
+                        try {
+                            recognition.start();
+                        } catch (e) {
+                            console.error('Error restarting recognition:', e);
+                            setTimeout(() => recognition.start(), 1000);
+                        }
+                    } else {
+                        statusText.textContent = "Stopped";
+                        statusIcon.className = "w-4 h-4 rounded-full bg-gray-500 mr-3";
+                    }
+                };
+            }
+            
+            // Check text for buzzwords
+            function checkForBuzzwords(text) {
+                let found = false;
+                
+                buzzwords.forEach(word => {
+                    const regex = new RegExp(`\\b${word}\\b`, 'gi');
+                    if (regex.test(text)) {
+                        found = true;
+                        matches++;
+                        triggerVibration();
+                        addMatch(word);
+                        
+                        // Highlight the buzzword in the transcript
+                        const transcriptDiv = document.createElement('div');
+                        transcriptDiv.innerHTML = text.replace(
+                            regex,
+                            match => `<span class="text-yellow-300 font-bold">${match}</span>`
+                        );
+                        transcript.lastElementChild.replaceWith(transcriptDiv);
+                    }
+                });
+                
+                if (found) {
+                    matchCount.textContent = matches;
+                    document.body.classList.add('vibrate');
+                    setTimeout(() => document.body.classList.remove('vibrate'), 500);
+                }
+            }
+            
+            // Trigger vibration if supported
+            function triggerVibration() {
+                if (navigator.vibrate) {
+                    // Vibration pattern: 200ms on, 100ms off, 200ms on
+                    navigator.vibrate([200, 100, 200]);
+                    console.log('Vibration triggered');
+                }
+            }
+            
+            // Add text to transcript
+            function addToTranscript(text) {
+                console.log('Adding to transcript:', text);
+                if (transcript.firstChild?.classList?.contains('italic')) {
+                    transcript.innerHTML = '';
+                }
+                
+                const p = document.createElement('p');
+                p.textContent = text;
+                p.className = 'mb-2 text-white';
+                transcript.appendChild(p);
+                transcript.scrollTop = transcript.scrollHeight;
+            }
+            
+            // Add matched word to matches list
+            function addMatch(word) {
+                const matchEl = document.createElement('div');
+                matchEl.className = 'bg-yellow-500/20 text-yellow-300 px-2 py-1 rounded flex items-center';
+                matchEl.innerHTML = `<i class="fas fa-bolt mr-2 text-yellow-300"></i> ${word}`;
+                
+                // Add pulse animation
+                matchEl.classList.add('pulse');
+                setTimeout(() => matchEl.classList.remove('pulse'), 500);
+                
+                matchesList.insertBefore(matchEl, matchesList.firstChild);
+            }
+            
+            // Update buttons based on state
+            function updateUI() {
+                startBtn.disabled = isListening;
+                stopBtn.disabled = !isListening;
+            }
+            
+            // Event listeners
+            startBtn.addEventListener('click', function() {
+                console.log('Start button clicked');
+                if (!recognition) {
+                    setupRecognition();
+                }
+                
+                // Request microphone permission first
+                navigator.mediaDevices.getUserMedia({ audio: true })
+                    .then(() => {
+                        // Microphone access granted, start recognition
+                        try {
+                            recognition.start();
+                            showToast("Listening started. Speak now!");
+                        } catch (e) {
+                            console.error('Error starting recognition:', e);
+                            showToast("Error starting speech recognition. Please try again.");
+                        }
+                    })
+                    .catch(err => {
+                        console.error('Microphone access denied:', err);
+                        statusText.textContent = "Microphone access denied";
+                        statusIcon.className = "w-4 h-4 rounded-full bg-red-500 mr-3";
+                        showToast("Microphone access is required for this feature. Please enable it in your browser settings.");
+                    });
+            });
+            
+            stopBtn.addEventListener('click', function() {
+                console.log('Stop button clicked');
+                if (recognition) {
+                    isListening = false;
+                    recognition.stop();
+                    showToast("Listening stopped");
+                }
+                updateUI();
+            });
+            
+            clearBtn.addEventListener('click', function() {
+                transcript.innerHTML = '<p class="text-gray-400 italic">Speech will appear here...</p>';
+                matchesList.innerHTML = '';
+                matches = 0;
+                matchCount.textContent = '0';
+            });
+            
+            updateBuzzwordsBtn.addEventListener('click', function() {
+                const newBuzzwords = buzzwordsInput.value.split(',')
+                    .map(w => w.trim())
+                    .filter(w => w.length > 0);
+                
+                if (newBuzzwords.length > 0) {
+                    buzzwords = newBuzzwords;
+                    showToast('Buzzwords updated!');
+                    console.log('Updated buzzwords:', buzzwords);
+                }
+            });
+            
+            // Helper function to show toasts
+            function showToast(message) {
+                const toast = document.createElement('div');
+                toast.className = 'fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-purple-600 text-white px-4 py-2 rounded-lg shadow-lg';
+                toast.textContent = message;
+                document.body.appendChild(toast);
+                
+                setTimeout(() => {
+                    toast.classList.add('opacity-0', 'transition-opacity', 'duration-300');
+                    setTimeout(() => toast.remove(), 300);
+                }, 2000);
+            }
+            
+            // Check for vibration support
+            if (!navigator.vibrate) {
+                console.log('Vibration API not supported');
+                showToast('Note: Vibration not supported on this device');
+            }
+            
+            // Add some debug logging
+            console.log('Page initialized. Ready to start speech recognition.');
+        });
+    </script>
+</body>
+</html>
